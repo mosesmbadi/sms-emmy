@@ -134,3 +134,132 @@ This function:
 - Parses CSV data and converts it to a list of contact dictionaries
 - Handles missing fields by setting defaults (`name='Customer'`, `company='N/A'`)
 - Returns the data in the exact format required by the `/messages` endpoint
+
+Testing/Manual deployments:
+You can deploy the project manually by running the ./deploy.sh script in the terraform directory.
+This should not be for production and is just for testing purposes.
+Pre-requisites:
+
+1. AWS CLI installed and configured with appropriate credentials.
+2. Terraform installed.
+3. Make the scripts executable and copy the example terraform.tfvars file.
+
+```bash
+╰─$ chmod +x "/home/mbadi/Desktop/Moses Mbadi/SavnnahInformaticsDevOpsAss/sms-emmy/terraform/deploy.sh"
+
+╰─$ chmod +x "/home/mbadi/Desktop/Moses Mbadi/SavnnahInformaticsDevOpsAss/sms-emmy/terraform/destroy.sh"
+
+╰─$ cd "/home/mbadi/Desktop/Moses Mbadi/SavnnahInformaticsDevOpsAss/sms-emmy/terraform" && cp ter
+raform.tfvars.example terraform.tfvars
+
+╰─$ aws --version
+aws-cli/2.31.0 Python/3.13.7 Linux/6.8.0-51-generic exe/x86_64.ubuntu.24
+
+╰─$ terraform version
+Terraform v1.12.2
+on linux_amd64
+
+╰─$ ls -la ~/.aws/ 2>/dev/null || echo "No AWS config directory found"
+total 16
+drwxrwxr-x   2 mbadi mbadi 4096 Jul 13 18:49 .
+drwxr-x---+ 85 mbadi mbadi 4096 Sep 25 13:35 ..
+-rw-------   1 mbadi mbadi  123 Jul 13 18:49 config
+-rw-------   1 mbadi mbadi  324 Jul 13 18:49 credentials
+
+╰─$ cd "/home/mbadi/Desktop/Moses Mbadi/SavnnahInformaticsDevOpsAss/sms-emmy/terraform" && ./deploy.sh
+```
+
+## CI/CD Pipeline
+
+This project includes a complete CI/CD pipeline using GitHub Actions that automatically:
+
+1. **Builds** Docker images on every push/PR
+2. **Pushes** images to GitHub Container Registry (ghcr.io)
+3. **Deploys** to AWS infrastructure when code is merged to main
+
+### GitHub Secrets Required
+
+Configure these secrets in your GitHub repository:
+
+**For Infrastructure Deployment:**
+
+- `AWS_ACCESS_KEY_ID`: Your AWS access key
+- `AWS_SECRET_ACCESS_KEY`: Your AWS secret key
+- `AWS_REGION`: AWS region (e.g., us-west-2)
+
+**For Application Deployment:**
+
+- `PRODUCTION_HOST`: EC2 instance public IP (set after infrastructure deployment)
+- `PRODUCTION_USER`: SSH username (default: ubuntu)
+- `PRODUCTION_SSH_KEY`: Private key for SSH access to EC2 instances
+
+### CI/CD Workflows
+
+This project uses **two separate workflows** following industry best practices:
+
+#### 1. Infrastructure Deployment (Manual Trigger)
+
+**Workflow:** `.github/workflows/infrastructure.yml`
+
+- **Trigger:** Manual workflow dispatch
+- **Purpose:** Deploy/destroy AWS infrastructure using Terraform
+- **Actions:** `apply`, `destroy`, or `plan`
+- **Run:** Go to GitHub Actions → "Deploy Infrastructure" → Run workflow
+
+```
+Manual Trigger → Terraform Init → Validate → Plan → Apply/Destroy → Summary
+```
+
+#### 2. Application Deployment (Automatic)
+
+**Workflow:** `.github/workflows/deploy.yml`
+
+- **Trigger:** Push to main branch
+- **Purpose:** Build, push, and deploy application
+- **Target:** Existing infrastructure (assumes infrastructure is already deployed)
+
+```
+Push to main → Build Image → Push to GHCR → Deploy to Server → Health Check → Cleanup
+```
+
+### Deployment Process
+
+1. **First-time Setup:**
+
+   ```bash
+   # 1. Deploy infrastructure manually
+   Go to GitHub Actions → "Deploy Infrastructure" → Run workflow (action: apply)
+
+   # 2. Update repository secrets with the instance IP from Terraform output
+   PRODUCTION_HOST: <instance_ip_from_terraform>
+
+   # 3. Push code to main branch to trigger app deployment
+   git push origin main
+   ```
+
+2. **Regular Deployments:**
+   ```bash
+   # Simply push to main - infrastructure stays unchanged
+   git push origin main
+   ```
+
+### Benefits of This Approach
+
+- **Faster Deployments**: No Terraform overhead on every deploy (~2-3 min vs 8-10 min)
+- **Infrastructure Safety**: Prevents accidental infrastructure changes
+- **Cost Control**: Infrastructure changes are intentional and reviewed
+- **Separation of Concerns**: Infrastructure and application lifecycles are separate
+- **Zero Downtime**: Application deployments use health checks and rolling updates
+
+### Manual Deployment (Alternative)
+
+For manual deployments:
+
+1. Ensure you have proper AWS IAM permissions for EC2, VPC, and related services
+2. Configure your terraform.tfvars file with appropriate values
+3. Run `terraform init` to initialize the Terraform working directory
+4. Run `terraform plan` to review the infrastructure changes
+5. Run `terraform apply` to deploy the infrastructure
+6. The application will be accessible at the EC2 instance's public IP
+
+Note: This configuration uses local state management. For production environments, consider configuring a remote backend with S3 and DynamoDB for state management and team collaboration.

@@ -1,0 +1,195 @@
+name: Build and Deploy Application
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only deploy on pushes to main branch (not PRs)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            set -e
+            
+            echo "🚀 Starting deployment..."
+            
+            # Navigate to application directory
+            cd ~/sms-emmy || {
+              echo "❌ Application directory not found. Please ensure infrastructure is deployed first."
+              echo "Run: terraform apply in the terraform directory"
+              exit 1
+            }
+            
+            # Create/update production docker-compose file with new image
+            cat > docker-compose.prod.yml << EOF
+            version: '3.8'
+            services:
+              api:
+                image: ${{ needs.build.outputs.image-tag }}
+                container_name: sms-api
+                ports:
+                  - "80:5000"
+                environment:
+                  - FLASK_ENV=production
+                  - FLASK_DEBUG=false
+                restart: unless-stopped
+                healthcheck:
+                  test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 40s
+            EOF
+            
+            # Login to GitHub Container Registry
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull the latest image
+            echo "📥 Pulling latest application image..."
+            docker compose -f docker-compose.prod.yml pull
+            
+            # Perform zero-downtime deployment
+            echo "🔄 Performing zero-downtime deployment..."
+            docker compose -f docker-compose.prod.yml up -d
+            
+            # Wait for health check
+            echo "🏥 Waiting for application health check..."
+            for i in {1..12}; do
+              if docker compose -f docker-compose.prod.yml ps | grep -q "healthy"; then
+                echo "✅ Application is healthy!"
+                break
+              fi
+              echo "Attempt $i/12: Waiting for health check..."
+              sleep 10
+            done
+            
+            # Clean up old images to save disk space
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+            
+            echo "✅ Deployment completed successfully!"
+
+      - name: Verify Deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          
+          # Wait a bit for the application to fully start
+          sleep 15
+          
+          # Test the application endpoint
+          for i in {1..6}; do
+            if curl -f -s http://${{ secrets.PRODUCTION_HOST }}/; then
+              echo "✅ Application is responding correctly!"
+              echo "🌐 Access your application at: http://${{ secrets.PRODUCTION_HOST }}"
+              break
+            fi
+            echo "Attempt $i/6: Application not responding, waiting 10 seconds..."
+            sleep 10
+          done
+
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Deployment Status:** Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Application URL** | http://${{ secrets.PRODUCTION_HOST }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image Tag** | \`${{ needs.build.outputs.image-tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deployment Failed
+        if: failure()
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The deployment process encountered an error. Please check the logs above." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Troubleshooting steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Verify that the production server is accessible" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check that the infrastructure is properly deployed" >> $GITHUB_STEP_SUMMARY
+          echo "3. Ensure all secrets are properly configured" >> $GITHUB_STEP_SUMMARY
+
+  cleanup:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Delete old container images
+        uses: actions/delete-package-versions@v4
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: true
+        continue-on-error: true

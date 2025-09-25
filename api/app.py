@@ -73,6 +73,24 @@ def index():
     """Render the main UI page"""
     return render_template('index.html')
 
+@app.route('/health')
+def health():
+    """Health check endpoint for monitoring and load balancers"""
+    try:
+        # Test database connectivity
+        db.session.execute('SELECT 1')
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'version': '1.0.0'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'database': 'disconnected',
+            'error': str(e)
+        }), 503
+
 @app.route('/results')
 def results():
     """Render the results page"""
