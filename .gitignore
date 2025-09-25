@@ -1,0 +1,10 @@
+*.pyc
+__pycache__/
+
+*.env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+
+*.db

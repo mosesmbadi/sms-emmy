@@ -1,0 +1,9 @@
+services:
+  web:
+    build:
+      context: ./api
+      dockerfile: ./Dockerfile.local
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./api:/app
