@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SMS Bulk Sender</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f5f5f5;
+        line-height: 1.6;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 2rem auto;
+        padding: 0 20px;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 2rem;
+      }
+
+      .header h1 {
+        color: #333;
+        margin-bottom: 0.5rem;
+      }
+
+      .header p {
+        color: #666;
+        font-size: 1.1rem;
+      }
+
+      .form-container {
+        background: white;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+      }
+
+      .form-group {
+        margin-bottom: 1.5rem;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        color: #333;
+      }
+
+      .form-group input[type="file"],
+      .form-group textarea {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #ddd;
+        border-radius: 5px;
+        font-size: 1rem;
+        transition: border-color 0.3s ease;
+      }
+
+      .form-group input[type="file"]:focus,
+      .form-group textarea:focus {
+        outline: none;
+        border-color: #007bff;
+      }
+
+      .form-group textarea {
+        resize: vertical;
+        min-height: 120px;
+      }
+
+      .help-text {
+        font-size: 0.9rem;
+        color: #666;
+        margin-top: 0.5rem;
+      }
+
+      .btn {
+        background-color: #007bff;
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 5px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+        width: 100%;
+      }
+
+      .btn:hover {
+        background-color: #0056b3;
+      }
+
+      .btn:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+
+      .alert {
+        padding: 1rem;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+        display: none;
+      }
+
+      .alert-success {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+      }
+
+      .alert-error {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+      }
+
+      .csv-format {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 5px;
+        border-left: 4px solid #007bff;
+      }
+
+      .csv-format h3 {
+        color: #333;
+        margin-bottom: 1rem;
+      }
+
+      .csv-format code {
+        background: #e9ecef;
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: "Courier New", monospace;
+      }
+
+      .loading {
+        display: none;
+        text-align: center;
+        margin: 1rem 0;
+      }
+
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #007bff;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>SMS Bulk Sender</h1>
+        <p>Upload your contacts and send personalized messages</p>
+      </div>
+
+      <div class="form-container">
+        <div id="alert" class="alert"></div>
+
+        <form id="smsForm" enctype="multipart/form-data">
+          <div class="form-group">
+            <label for="csvFile">Upload CSV File with Contacts</label>
+            <input
+              type="file"
+              id="csvFile"
+              name="csvFile"
+              accept=".csv"
+              required
+            />
+            <div class="help-text">
+              Select a CSV file containing your contacts. See format
+              requirements below.
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="message">Message Template</label>
+            <textarea
+              id="message"
+              name="message"
+              placeholder="Hello {name}, your company {company} has been selected..."
+              required
+            ></textarea>
+            <div class="help-text">
+              Use placeholders like {name}, {company}, {phone} to personalize
+              messages. These will be replaced with data from your CSV.
+            </div>
+          </div>
+
+          <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing messages...</p>
+          </div>
+
+          <button type="submit" class="btn" id="submitBtn">
+            Send Messages
+          </button>
+        </form>
+      </div>
+
+      <div class="csv-format">
+        <h3>CSV File Format Requirements</h3>
+        <p>Your CSV file should contain the following columns:</p>
+        <ul style="margin: 1rem 0; padding-left: 2rem">
+          <li>
+            <code>phone</code> - Phone number (with or without country code)
+          </li>
+          <li><code>name</code> - Contact name</li>
+          <li><code>company</code> - Company name (optional)</li>
+        </ul>
+        <p><strong>Example CSV content:</strong></p>
+        <pre
+          style="
+            background: #e9ecef;
+            padding: 1rem;
+            border-radius: 3px;
+            margin-top: 1rem;
+            overflow-x: auto;
+          "
+        >
+            phone,name,company
+            +14155552671,Jane Doe,Acme Corp
+            55552672,John Smith,Tech Solutions
+            +1234567890,Alice Johnson,Creative Agency
+        </pre
+        >
+      </div>
+    </div>
+
+    <script>
+      document
+        .getElementById("smsForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+
+          const formData = new FormData();
+          const csvFile = document.getElementById("csvFile").files[0];
+          const message = document.getElementById("message").value;
+
+          if (!csvFile) {
+            showAlert("Please select a CSV file", "error");
+            return;
+          }
+
+          if (!message.trim()) {
+            showAlert("Please enter a message template", "error");
+            return;
+          }
+
+          // Show loading state
+          document.getElementById("loading").style.display = "block";
+          document.getElementById("submitBtn").disabled = true;
+          hideAlert();
+
+          formData.append("csvFile", csvFile);
+          formData.append("message", message);
+
+          try {
+            const response = await fetch("/upload", {
+              method: "POST",
+              body: formData,
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+              showAlert(
+                `Messages processed successfully! ${result.processed} successful, ${result.failed} failed. <a href="/results" style="color: #155724; text-decoration: underline;">View detailed results</a>`,
+                "success"
+              );
+              document.getElementById("smsForm").reset();
+            } else {
+              showAlert(result.error || "An error occurred", "error");
+            }
+          } catch (error) {
+            showAlert("Network error: " + error.message, "error");
+          } finally {
+            // Hide loading state
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("submitBtn").disabled = false;
+          }
+        });
+
+      function showAlert(message, type) {
+        const alert = document.getElementById("alert");
+        alert.innerHTML = message;
+        alert.className = `alert alert-${type}`;
+        alert.style.display = "block";
+      }
+
+      function hideAlert() {
+        document.getElementById("alert").style.display = "none";
+      }
+    </script>
+  </body>
+</html>
