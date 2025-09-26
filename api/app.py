@@ -7,11 +7,24 @@ import phonenumbers
 import os
 import csv
 import io
+import logging
+from datetime import datetime
+import time
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(os.path.abspath(os.path.dirname(__file__)), 'messages.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Console output (captured by Docker)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 limiter = Limiter(
     get_remote_address,
@@ -76,17 +89,33 @@ def index():
 @app.route('/health')
 def health():
     """Health check endpoint for monitoring and load balancers"""
+    start_time = time.time()
     try:
         # Test database connectivity
         db.session.execute('SELECT 1')
+        
+        # Get basic stats
+        total_messages = Message.query.count()
+        pending_messages = Message.query.filter_by(status='pending').count()
+        
+        response_time = (time.time() - start_time) * 1000  # Convert to ms
+        
         return jsonify({
             'status': 'healthy',
+            'timestamp': datetime.utcnow().isoformat(),
             'database': 'connected',
-            'version': '1.0.0'
+            'version': '1.0.0',
+            'stats': {
+                'total_messages': total_messages,
+                'pending_messages': pending_messages,
+                'response_time_ms': round(response_time, 2)
+            }
         }), 200
     except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
         return jsonify({
             'status': 'unhealthy',
+            'timestamp': datetime.utcnow().isoformat(),
             'database': 'disconnected',
             'error': str(e)
         }), 503
@@ -96,13 +125,23 @@ def results():
     """Render the results page"""
     return render_template('results.html')
 
+@app.route('/monitoring')
+def monitoring():
+    """Render the monitoring dashboard"""
+    return render_template('monitoring.html')
+
 @app.route('/upload', methods=['POST'])
 @limiter.limit("5 per minute")
 def upload_and_process():
     """Handle CSV upload and convert to JSON for processing"""
+    start_time = time.time()
+    client_ip = request.remote_addr
+    logger.info(f"CSV upload request from {client_ip}")
+    
     try:
         # Check if file and message are provided
         if 'csvFile' not in request.files:
+            logger.warning(f"Upload failed from {client_ip}: No CSV file provided")
             return jsonify({'error': 'No CSV file provided'}), 400
         
         if 'message' not in request.form:
@@ -225,17 +264,38 @@ def create_messages():
 
 @app.route('/metrics', methods=['GET'])
 def metrics():
-    messages = Message.query.all()
-    output = []
-    for message in messages:
-        output.append({
-            'id': message.id,
-            'phone_number': message.phone_number,
-            'message': message.message,
-            'status': message.status,
-            'error_message': message.error_message
-        })
-    return jsonify({'messages': output})
+    """Application metrics endpoint for monitoring"""
+    try:
+        # Get message statistics
+        total_messages = Message.query.count()
+        success_count = Message.query.filter_by(status='success').count()
+        failed_count = Message.query.filter_by(status='failed').count()
+        pending_count = Message.query.filter_by(status='pending').count()
+        
+        success_rate = (success_count / total_messages * 100) if total_messages > 0 else 0
+        
+        # Recent messages (last 100)
+        recent_messages = Message.query.order_by(Message.id.desc()).limit(100).all()
+        
+        return jsonify({
+            'timestamp': datetime.utcnow().isoformat(),
+            'summary': {
+                'total_messages': total_messages,
+                'success_count': success_count,
+                'failed_count': failed_count,
+                'pending_count': pending_count,
+                'success_rate_percent': round(success_rate, 2)
+            },
+            'recent_messages': [{
+                'id': msg.id,
+                'phone_number': msg.phone_number[:3] + '***' + msg.phone_number[-3:] if msg.phone_number else None,  # Privacy
+                'status': msg.status,
+                'error_message': msg.error_message
+            } for msg in recent_messages]
+        }), 200
+    except Exception as e:
+        logger.error(f"Metrics endpoint failed: {str(e)}")
+        return jsonify({'error': 'Failed to retrieve metrics'}), 500
 
 if __name__ == '__main__':
     with app.app_context():

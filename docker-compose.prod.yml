@@ -7,6 +7,7 @@ services:
     environment:
       - FLASK_ENV=production
       - FLASK_DEBUG=false
+      - ENABLE_PROMETHEUS_METRICS=true
     restart: unless-stopped
     volumes:
       - ./messages.db:/app/messages.db
