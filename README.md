@@ -94,6 +94,8 @@ curl --request POST \
 }'
 ```
 
+This endpoint has a Rate Limiter of 5 requests per minute.
+
 **Upload CSV File**
 
 ```bash

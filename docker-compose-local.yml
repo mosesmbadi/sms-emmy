@@ -1,32 +1,28 @@
-# Monitoring & Alerting Configuration
 version: "3.8"
 
 services:
-  # Main application
+  # Main application (built locally)
   api:
-    image: ghcr.io/mosesmbadi/sms-emmy:latest
+    build:
+      context: ./api
+      dockerfile: Dockerfile.local
     container_name: sms-api
     ports:
-      - "80:5000"
+      - "5000:5000"
     environment:
-      - FLASK_ENV=production
-      - FLASK_DEBUG=false
-      - ENABLE_PROMETHEUS=true
-    restart: unless-stopped
+      - FLASK_ENV=development
+      - FLASK_DEBUG=true
     volumes:
+      - ./api:/app
       - ./messages.db:/app/messages.db
-      - ./logs:/app/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    networks:
+      - default
 
   # Prometheus for metrics collection
   prometheus:
@@ -36,6 +32,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -45,6 +42,8 @@ services:
       - "--storage.tsdb.retention.time=200h"
       - "--web.enable-lifecycle"
     restart: unless-stopped
+    networks:
+      - default
 
   # Grafana for dashboards
   grafana:
@@ -60,6 +59,8 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     restart: unless-stopped
+    networks:
+      - default
 
   # Alertmanager for alerts
   alertmanager:
@@ -74,6 +75,8 @@ services:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
     restart: unless-stopped
+    networks:
+      - default
 
   # Node Exporter for system metrics
   node_exporter:
@@ -91,6 +94,8 @@ services:
       - "--path.sysfs=/host/sys"
       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     restart: unless-stopped
+    networks:
+      - default
 
 volumes:
   prometheus_data:
