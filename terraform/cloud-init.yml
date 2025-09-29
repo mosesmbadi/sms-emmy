@@ -1,0 +1,45 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - unzip
+  - git
+
+runcmd:
+  # Install Docker
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io
+  
+  # Install Docker Compose
+  - curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+  - ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+  
+  # Add ubuntu user to docker group
+  - usermod -aG docker ubuntu
+  
+  # Start Docker service
+  - systemctl start docker
+  - systemctl enable docker
+  
+  # Create deployment directory
+  - mkdir -p /home/ubuntu/app
+  - chown ubuntu:ubuntu /home/ubuntu/app
+  
+  # Create messages database file
+  - su - ubuntu -c "touch /home/ubuntu/app/messages.db"
+  
+  # Install nginx for basic web server (optional, will be replaced by app)
+  - apt-get install -y nginx
+  - systemctl start nginx
+  - systemctl enable nginx
+
+final_message: "SMS Emmy application has been deployed! Access it via the public IP on port 5000."

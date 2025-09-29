@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SMS Results - Bulk Sender</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f5f5f5;
+        line-height: 1.6;
+      }
+
+      .container {
+        max-width: 1000px;
+        margin: 2rem auto;
+        padding: 0 20px;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 2rem;
+      }
+
+      .header h1 {
+        color: #333;
+        margin-bottom: 0.5rem;
+      }
+
+      .results-container {
+        background: white;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+      }
+
+      .stat-card {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        text-align: center;
+        border-left: 4px solid #007bff;
+      }
+
+      .stat-card.success {
+        border-left-color: #28a745;
+      }
+
+      .stat-card.error {
+        border-left-color: #dc3545;
+      }
+
+      .stat-number {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #333;
+      }
+
+      .stat-label {
+        color: #666;
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+      }
+
+      .messages-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+      }
+
+      .messages-table th,
+      .messages-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .messages-table th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+      }
+
+      .status-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .status-success {
+        background-color: #d4edda;
+        color: #155724;
+      }
+
+      .status-failed {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+
+      .btn {
+        background-color: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        text-decoration: none;
+        display: inline-block;
+        margin-top: 1rem;
+      }
+
+      .btn:hover {
+        background-color: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>SMS Processing Results</h1>
+        <p>View the status of your bulk SMS messages</p>
+      </div>
+
+      <div class="results-container">
+        <div id="stats" class="stats">
+          <!-- Stats will be loaded here -->
+        </div>
+
+        <h3>Message Details</h3>
+        <table class="messages-table" id="messagesTable">
+          <thead>
+            <tr>
+              <th>Phone Number</th>
+              <th>Message Preview</th>
+              <th>Status</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="messagesBody">
+            <!-- Messages will be loaded here -->
+          </tbody>
+        </table>
+
+        <a href="/" class="btn">Send More Messages</a>
+      </div>
+    </div>
+
+    <script>
+      // Load metrics when page loads
+      window.addEventListener("load", loadMetrics);
+
+      async function loadMetrics() {
+        try {
+          const response = await fetch("/metrics");
+          const data = await response.json();
+
+          displayStats(data.messages);
+          displayMessages(data.messages);
+        } catch (error) {
+          console.error("Error loading metrics:", error);
+        }
+      }
+
+      function displayStats(messages) {
+        const total = messages.length;
+        const successful = messages.filter(
+          (m) => m.status === "success"
+        ).length;
+        const failed = messages.filter((m) => m.status === "failed").length;
+
+        const statsHtml = `
+                <div class="stat-card">
+                    <div class="stat-number">${total}</div>
+                    <div class="stat-label">Total Messages</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="stat-number">${successful}</div>
+                    <div class="stat-label">Successful</div>
+                </div>
+                <div class="stat-card error">
+                    <div class="stat-number">${failed}</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+            `;
+
+        document.getElementById("stats").innerHTML = statsHtml;
+      }
+
+      function displayMessages(messages) {
+        const tbody = document.getElementById("messagesBody");
+
+        if (messages.length === 0) {
+          tbody.innerHTML =
+            '<tr><td colspan="4" style="text-align: center;">No messages found</td></tr>';
+          return;
+        }
+
+        const messagesHtml = messages
+          .map((message) => {
+            const messagePreview =
+              message.message.length > 50
+                ? message.message.substring(0, 50) + "..."
+                : message.message;
+
+            const statusClass =
+              message.status === "success" ? "status-success" : "status-failed";
+
+            return `
+                    <tr>
+                        <td>${message.phone_number}</td>
+                        <td>${messagePreview}</td>
+                        <td><span class="status-badge ${statusClass}">${
+              message.status
+            }</span></td>
+                        <td>${message.error_message || "-"}</td>
+                    </tr>
+                `;
+          })
+          .join("");
+
+        tbody.innerHTML = messagesHtml;
+      }
+    </script>
+  </body>
+</html>
