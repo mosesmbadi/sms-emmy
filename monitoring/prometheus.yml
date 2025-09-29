@@ -13,12 +13,14 @@ alerting:
           - alertmanager:9093
 
 scrape_configs:
-  # SMS Application metrics
+  # SMS Application metrics (production deployment)
   - job_name: 'sms-api'
     static_configs:
-      - targets: ['api:5000']
+      # Replace with actual application server IPs
+      - targets: ['APPLICATION_SERVER_IP:5000']
     metrics_path: '/metrics'
     scrape_interval: 30s
+    scrape_timeout: 10s
 
   # System metrics
   - job_name: 'node-exporter'
