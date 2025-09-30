@@ -1,7 +1,6 @@
 version: "3.8"
 
 services:
-  # Main application (built locally)
   api:
     build:
       context: ./api
@@ -14,7 +13,6 @@ services:
       - FLASK_DEBUG=true
     volumes:
       - ./api:/app
-      - ./messages.db:/app/messages.db
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
@@ -23,81 +21,3 @@ services:
       start_period: 40s
     networks:
       - default
-
-  # Prometheus for metrics collection
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: sms-prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
-      - prometheus_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.console.libraries=/etc/prometheus/console_libraries"
-      - "--web.console.templates=/etc/prometheus/consoles"
-      - "--storage.tsdb.retention.time=200h"
-      - "--web.enable-lifecycle"
-    restart: unless-stopped
-    networks:
-      - default
-
-  # Grafana for dashboards
-  grafana:
-    image: grafana/grafana:latest
-    container_name: sms-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
-    restart: unless-stopped
-    networks:
-      - default
-
-  # Alertmanager for alerts
-  alertmanager:
-    image: prom/alertmanager:latest
-    container_name: sms-alertmanager
-    ports:
-      - "9093:9093"
-    volumes:
-      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-      - alertmanager_data:/alertmanager
-    command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-      - "--storage.path=/alertmanager"
-    restart: unless-stopped
-    networks:
-      - default
-
-  # Node Exporter for system metrics
-  node_exporter:
-    image: prom/node-exporter:latest
-    container_name: sms-node-exporter
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - "--path.procfs=/host/proc"
-      - "--path.rootfs=/rootfs"
-      - "--path.sysfs=/host/sys"
-      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
-    restart: unless-stopped
-    networks:
-      - default
-
-volumes:
-  prometheus_data:
-  grafana_data:
-  alertmanager_data:
